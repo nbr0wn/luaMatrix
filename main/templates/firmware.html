@@ -1,0 +1,68 @@
+<!DOCTYPE html><html lang="en-us"><head>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta charset="UTF-8">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css">
+<script src='https://ajax.googleapis.com/ajax/libs/jquery/3.2.1/jquery.min.js'></script>
+<title>Firmware Update</title>
+<script>
+function do_reset(fname) {
+    var http = new XMLHttpRequest();
+    console.log('reset');
+    http.open("GET", "/reset", true);
+    http.setRequestHeader("Content-type","application/x-www-form-urlencoded");
+    var params = "{}";
+    http.send(params);
+}
+</script>
+<style>
+#editor {
+    position: absolute;
+    width: 100%;
+    height: 400px;
+}
+</style>
+
+</head><body>
+<main class="container">
+<h1>Firmware Update</h1>
+<form method='POST' action='#' enctype='multipart/form-data' id='upload_form'>
+    <label for='lua-upload'>Select Firmware</label>
+    <input type='file' name='lua-upload' id='lua-upload'>
+    <button type='submit'>Upload</button>
+</form>
+<div id='prg'><progress value="0" max="100"></progress></div>
+<hr>
+<button class="secondary" onclick='do_reset()'>Reboot</button>
+</main>
+<script>
+$('form').submit(function(e){
+    e.preventDefault();
+      var form = $('#upload_form')[0];
+      var data = new FormData(form);
+       $.ajax({
+            url: '/lua-upload',
+            type: 'POST',
+            data: data,
+            contentType: false,
+            processData:false,
+            xhr: function() {
+                var xhr = new window.XMLHttpRequest();
+                xhr.upload.addEventListener('progress', function(evt) {
+                    if (evt.lengthComputable) {
+                        var per = evt.loaded / evt.total;
+                        $('#prg progress').val(Math.round(per*100));
+                    }
+               }, false);
+               return xhr;
+            },
+            success:function(d, s) {
+                console.log('Upload success!')
+                window.location.href='/';
+           },
+            error: function (a, b, c) {
+            }
+          });
+});
+</script>
+<script src='https://cdn.jsdelivr.net/npm/ace-builds@1.34.2/src-min-noconflict/ace.js' type='text/javascript' charset='utf-8'></script>
+</body></html>

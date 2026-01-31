@@ -1,2 +1,2 @@
 # luaMatrix
-Lua powered HUB75 matrix LED controller
+ESP32 Lua powered HUB75 matrix LED controller

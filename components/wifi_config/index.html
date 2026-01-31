@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <title>ESP32 WiFi Portal</title>
+  <meta name='viewport' content='width=device-width,initial-scale=1'>
+  <style>
+    body {
+      font-family: sans-serif;
+      max-width: 30em;
+      margin: auto;
+      padding: 2em;
+    }
+
+    label,
+    input {
+      display: block;
+      width: 100%;
+      margin-bottom: 1em;
+    }
+
+    select {
+      display: block;
+      width: 100%;
+      margin-bottom: 1em;
+      padding: 0.5em;
+    }
+
+    button,
+    input[type='submit'] {
+      padding: 1em 1.5em;
+      font-size: 1em;
+    }
+  </style>
+</head>
+
+<body>
+  <h1>Select WiFi network</h1>
+  <button onclick='scanWifi()'>Rescan</button>
+  <form method='POST' action='/settings' id='form'>
+    SSID:<br><select id='ssid' name='ssid' required>
+      <option value=''>Scanning...</option>
+    </select><br>
+    Password:<br><input type='password' id='password' name='password' maxlength='64'><br>
+    <input type='submit' value='Connect'>
+  </form>
+  <script>
+    function scanWifi() {
+      var select = document.getElementById('ssid');
+      select.innerHTML = '<option value="">Scanning...</option>';
+      fetch('/scan').then(r => r.json()).then(list => {
+        select.innerHTML = '';
+        if (list.length == 0) {
+          select.innerHTML = '<option value="">No networks found</option>';
+          return;
+        }
+        select.innerHTML = '<option value="">-- Select network --</option>';
+        list.forEach(function(n) {
+          if( n.ssid != "") {
+            var opt = document.createElement('option');
+            opt.value = n.ssid;
+            opt.textContent = n.ssid + ' (' + n.rssi + 'dBm)';
+            select.appendChild(opt);
+          }
+        });
+      });
+    }
+    scanWifi();
+  </script>
+  <p>This portal is also accessible via <b>http://esp32-setup.local/</b> (mDNS)</p>
+</body>
+
+</html>

@@ -1,0 +1,14 @@
+## IDF Component Manager Manifest File
+dependencies:
+  georgik/lua: ==5.4.7
+  joltwallet/littlefs: ==1.14.8
+  mdns: ==1.9.1
+
+
+  ## Required IDF version
+  idf:
+    version: '>=4.1.0'
+  #esphome/esp-hub75: ^0.3.2
+  hub75:
+      git: https://github.com/esphome-libs/esp-hub75
+      path: components/hub75  

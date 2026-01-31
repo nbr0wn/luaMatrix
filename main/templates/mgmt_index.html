@@ -1,0 +1,141 @@
+<!DOCTYPE HTML>
+<html lang="en">
+<head>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta charset="UTF-8">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css">
+  <title>LuaMatrix</title>
+</head>
+<body>
+  <main class="container">
+  <h1>LuaMatrix</h1>
+  <nav>
+    <ul>
+      <li><strong>Free space:</strong> <span id="freespace">...</span> bytes</li>
+    </ul>
+    <ul>
+      <li><a href="#" role="button" class="outline" onclick="logoutButton(); return false;">Logout</a></li>
+      <li><a href="#" role="button" class="outline" onclick="rebootButton(); return false;">Reboot</a></li>
+      <li><a href="#" role="button" class="outline secondary" onclick="factoryResetButton(); return false;">Factory Reset</a></li>
+    </ul>
+  </nav>
+  <h2>Files</h2>
+  <table>
+    <thead>
+      <tr>
+        <th>Filename</th>
+        <th>Size</th>
+        <th>Actions</th>
+      </tr>
+    </thead>
+    <tbody id="filelist">
+      <tr><td colspan="3">Loading...</td></tr>
+    </tbody>
+  </table>
+  <h2>Upload</h2>
+  <form id="upload_form" enctype="multipart/form-data" method="post">
+    <input type="file" name="file1" id="file1">
+    <button type="button" onclick="uploadFile()">Upload</button>
+    <span id="upload_status"></span>
+  </form>
+  </main>
+<script>
+function logoutButton() {
+  var xhr = new XMLHttpRequest();
+  xhr.open("GET", "/logout", true);
+  xhr.send();
+  setTimeout(function(){ window.open("/logged-out","_self"); }, 1000);
+}
+function rebootButton() {
+  var xhr = new XMLHttpRequest();
+  xhr.open("GET", "/reboot", true);
+  xhr.send();
+  window.open("/reboot","_self");
+}
+function factoryResetButton() {
+  var xhr = new XMLHttpRequest();
+  xhr.open("GET", "/factoryreset", true);
+  xhr.send();
+  window.open("/factoryreset","_self");
+}
+function _(el) {
+  return document.getElementById(el);
+}
+function uploadFile() {
+  var file = _("file1").files[0];
+  if (!file) {
+    _("upload_status").innerHTML = "No file selected";
+    return;
+  }
+  _("upload_status").innerHTML = "Uploading...";
+  var formdata = new FormData();
+  formdata.append("file1", file);
+  var ajax = new XMLHttpRequest();
+  ajax.addEventListener("load", completeHandler, false);
+  ajax.addEventListener("error", errorHandler, false);
+  ajax.addEventListener("abort", abortHandler, false);
+  ajax.open("POST", "/");
+  ajax.send(formdata);
+}
+function progressHandler(event) {
+  //_("loaded_n_total").innerHTML = "Uploaded " + event.loaded + " bytes of " + event.total; // event.total doesnt show accurate total file size
+  _("loaded_n_total").innerHTML = "Uploaded " + event.loaded + " bytes";
+  var percent = (event.loaded / event.total) * 100;
+  _("progressBar").value = Math.round(percent);
+  _("status").innerHTML = Math.round(percent) + "% uploaded... please wait";
+  if (percent >= 100) {
+    _("status").innerHTML = "Please wait, writing file to filesystem";
+  }
+}
+function completeHandler(event) {
+  _("upload_status").innerHTML = "Upload Complete";
+  _("file1").value = "";
+  loadFiles();
+  loadFreeSpace();
+}
+function errorHandler(event) {
+  _("upload_status").innerHTML = "Upload Failed";
+}
+function abortHandler(event) {
+  _("upload_status").innerHTML = "Upload Aborted";
+}
+function loadFreeSpace() {
+  fetch('/freespace')
+    .then(r => r.json())
+    .then(data => {
+      _('freespace').textContent = data.free;
+    })
+    .catch(function() {
+      _('freespace').textContent = 'error';
+    });
+}
+function loadFiles() {
+  fetch('/files')
+    .then(r => r.json())
+    .then(files => {
+      var tbody = _('filelist');
+      if (files.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="3">No files found</td></tr>';
+        return;
+      }
+      tbody.innerHTML = '';
+      files.forEach(function(f) {
+        var tr = document.createElement('tr');
+        tr.innerHTML =
+          '<td><a href="/edit?filename=' + f.name + '">' + f.name + '</a></td>' +
+          '<td>' + f.size + ' bytes</td>' +
+          '<td><a href="/delete?filename=' + f.name + '" role="button" class="outline secondary">Delete</a></td>';
+        tbody.appendChild(tr);
+      });
+    })
+    .catch(function() {
+      _('filelist').innerHTML = '<tr><td colspan="3">Error loading files</td></tr>';
+    });
+}
+window.onload = function() {
+  loadFreeSpace();
+  loadFiles();
+};
+</script>
+</body>
+</html>
