@@ -38,6 +38,37 @@
     <button type="button" onclick="uploadFile()">Upload</button>
     <span id="upload_status"></span>
   </form>
+  <h2>MQTT Settings</h2>
+  <form id="mqtt_form" method="post" action="/mqtt">
+    <fieldset>
+      <label>
+        <input type="checkbox" name="enabled" id="mqtt_enabled">
+        Enable MQTT
+      </label>
+    </fieldset>
+    <label>Broker URL
+      <input type="text" name="broker" id="mqtt_broker" placeholder="mqtt.example.com">
+    </label>
+    <label>Port
+      <input type="number" name="port" id="mqtt_port" value="1883" min="1" max="65535">
+    </label>
+    <label>Username (optional)
+      <input type="text" name="username" id="mqtt_username">
+    </label>
+    <label>Password (optional)
+      <input type="password" name="password" id="mqtt_password">
+    </label>
+    <label>Data Topic
+      <input type="text" name="data_topic" id="mqtt_data_topic" placeholder="luamatrix/data">
+    </label>
+    <label>Program Topic
+      <input type="text" name="program_topic" id="mqtt_program_topic" placeholder="luamatrix/program">
+    </label>
+    <div style="margin-bottom:1em">
+      <strong>Status:</strong> <span id="mqtt_status">...</span>
+    </div>
+    <button type="submit">Save MQTT Settings</button>
+  </form>
   </main>
 <script>
 function logoutButton() {
@@ -132,9 +163,27 @@ function loadFiles() {
       _('filelist').innerHTML = '<tr><td colspan="3">Error loading files</td></tr>';
     });
 }
+function loadMqttSettings() {
+  fetch('/mqtt')
+    .then(r => r.json())
+    .then(data => {
+      _('mqtt_broker').value = data.broker || '';
+      _('mqtt_port').value = data.port || 1883;
+      _('mqtt_username').value = data.username || '';
+      _('mqtt_enabled').checked = data.enabled;
+      _('mqtt_data_topic').value = data.data_topic || '';
+      _('mqtt_program_topic').value = data.program_topic || '';
+      _('mqtt_status').textContent = data.connected ? 'Connected' : 'Disconnected';
+      _('mqtt_status').style.color = data.connected ? 'green' : 'red';
+    })
+    .catch(function() {
+      _('mqtt_status').textContent = 'Error loading settings';
+    });
+}
 window.onload = function() {
   loadFreeSpace();
   loadFiles();
+  loadMqttSettings();
 };
 </script>
 </body>

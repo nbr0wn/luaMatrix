@@ -4,11 +4,14 @@
 #include <lua.h>
 #include <stdlib.h>
 #include <stdint.h>
+#include <string.h>
 #include "esp_log.h"
 #include "esp_timer.h"
+#include "esp_http_client.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "display.h"
+#include "luamatrix_mqtt.h"
 
 static const char* TAG = "luafuncs";
 
@@ -868,6 +871,154 @@ int lua_delay(lua_State *LUA) {
     return 0;
 }
 
+// mqtt_connected() - returns true if MQTT is connected
+int lua_mqtt_connected(lua_State *LUA) {
+    lua_pushboolean(LUA, mqtt_client_is_connected());
+    return 1;
+}
+
+// mqtt_publish(topic, message, [qos], [retain]) - publish a message
+int lua_mqtt_publish(lua_State *LUA) {
+    int nargs = lua_gettop(LUA);
+    if (nargs < 2) {
+        lua_pushliteral(LUA, "mqtt_publish requires topic and message");
+        lua_error(LUA);
+        return 0;
+    }
+
+    const char *topic = lua_tostring(LUA, 1);
+    const char *message = lua_tostring(LUA, 2);
+    int qos = (nargs >= 3) ? lua_tointeger(LUA, 3) : 0;
+    int retain = (nargs >= 4) ? lua_toboolean(LUA, 4) : 0;
+
+    esp_err_t err = mqtt_publish(topic, message, qos, retain);
+    lua_pushboolean(LUA, err == ESP_OK);
+    return 1;
+}
+
+// mqtt_receive() - non-blocking check for pending messages
+// Returns: topic, message if available; nil if no message
+int lua_mqtt_receive(lua_State *LUA) {
+    char topic[128], data[512];
+    if (mqtt_get_pending_message(topic, sizeof(topic), data, sizeof(data))) {
+        lua_pushstring(LUA, topic);
+        lua_pushstring(LUA, data);
+        return 2;
+    }
+    lua_pushnil(LUA);
+    return 1;
+}
+
+// mqtt_wait([timeout_ms]) - blocking wait for message
+// Returns: topic, message if received; nil if timeout
+// timeout_ms: 0 or omitted = wait forever
+int lua_mqtt_wait(lua_State *LUA) {
+    uint32_t timeout_ms = 0;
+    if (lua_gettop(LUA) >= 1 && lua_isinteger(LUA, 1)) {
+        timeout_ms = lua_tointeger(LUA, 1);
+    }
+
+    char topic[128], data[512];
+    if (mqtt_wait_for_message(topic, sizeof(topic), data, sizeof(data), timeout_ms)) {
+        lua_pushstring(LUA, topic);
+        lua_pushstring(LUA, data);
+        return 2;
+    }
+    lua_pushnil(LUA);
+    return 1;
+}
+
+// http_fetch(url) - fetch content from HTTP server
+// url format: "hostname:port/path" or "hostname/path" or "hostname:port" or "hostname"
+// Returns: response body as string, or nil on error
+#define HTTP_FETCH_MAX_SIZE 8192
+
+int lua_http_fetch(lua_State *LUA) {
+    if (lua_gettop(LUA) < 1 || !lua_isstring(LUA, 1)) {
+        lua_pushliteral(LUA, "http_fetch requires a URL string");
+        lua_error(LUA);
+        return 0;
+    }
+
+    const char *url_arg = lua_tostring(LUA, 1);
+
+    // Build the full URL with http:// prefix if needed
+    char url[512];
+    if (strncmp(url_arg, "http://", 7) == 0 || strncmp(url_arg, "https://", 8) == 0) {
+        snprintf(url, sizeof(url), "%s", url_arg);
+    } else {
+        snprintf(url, sizeof(url), "http://%s", url_arg);
+    }
+
+    ESP_LOGI(TAG, "http_fetch: %s", url);
+
+    esp_http_client_config_t config = {
+        .url = url,
+        .timeout_ms = 10000,
+    };
+
+    esp_http_client_handle_t client = esp_http_client_init(&config);
+    if (client == NULL) {
+        ESP_LOGE(TAG, "Failed to init HTTP client");
+        lua_pushnil(LUA);
+        return 1;
+    }
+
+    esp_err_t err = esp_http_client_open(client, 0);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to open HTTP connection: %s", esp_err_to_name(err));
+        esp_http_client_cleanup(client);
+        lua_pushnil(LUA);
+        return 1;
+    }
+
+    int content_length = esp_http_client_fetch_headers(client);
+    if (content_length < 0) {
+        content_length = HTTP_FETCH_MAX_SIZE; // Unknown length, try to read up to max
+    }
+
+    // Limit to max size
+    if (content_length > HTTP_FETCH_MAX_SIZE) {
+        content_length = HTTP_FETCH_MAX_SIZE;
+    }
+
+    char *buffer = malloc(content_length + 1);
+    if (buffer == NULL) {
+        ESP_LOGE(TAG, "Failed to allocate buffer for HTTP response");
+        esp_http_client_close(client);
+        esp_http_client_cleanup(client);
+        lua_pushnil(LUA);
+        return 1;
+    }
+
+    int total_read = 0;
+    int read_len;
+    while (total_read < content_length) {
+        read_len = esp_http_client_read(client, buffer + total_read, content_length - total_read);
+        if (read_len <= 0) {
+            break;
+        }
+        total_read += read_len;
+    }
+    buffer[total_read] = '\0';
+
+    int status = esp_http_client_get_status_code(client);
+    ESP_LOGI(TAG, "HTTP status: %d, read %d bytes", status, total_read);
+
+    esp_http_client_close(client);
+    esp_http_client_cleanup(client);
+
+    if (status >= 200 && status < 300) {
+        lua_pushstring(LUA, buffer);
+    } else {
+        ESP_LOGE(TAG, "HTTP request failed with status %d", status);
+        lua_pushnil(LUA);
+    }
+
+    free(buffer);
+    return 1;
+}
+
 void load_lua_funcs(lua_State *LUA) {
     lua_register(LUA, "clear_display", lua_clear_display);
     lua_register(LUA, "fill_rect", lua_fill_rect);
@@ -882,4 +1033,9 @@ void load_lua_funcs(lua_State *LUA) {
     lua_register(LUA, "draw_string", lua_draw_string);
     lua_register(LUA, "millis", lua_millis);
     lua_register(LUA, "delay", lua_delay);
+    lua_register(LUA, "mqtt_connected", lua_mqtt_connected);
+    lua_register(LUA, "mqtt_publish", lua_mqtt_publish);
+    lua_register(LUA, "mqtt_receive", lua_mqtt_receive);
+    lua_register(LUA, "mqtt_wait", lua_mqtt_wait);
+    lua_register(LUA, "http_fetch", lua_http_fetch);
 }

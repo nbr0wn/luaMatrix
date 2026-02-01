@@ -1,4 +1,4 @@
-idf_component_register(SRCS "luamatrix.c" "display.cpp" "local_lua.c" "luafuncs.c" "mgmt_http_server.c"
+idf_component_register(SRCS "luamatrix.c" "display.cpp" "local_lua.c" "luafuncs.c" "mgmt_http_server.c" "mqtt_client.c"
                     INCLUDE_DIRS "../include" )
 
 target_add_binary_data(${COMPONENT_TARGET} "templates/favicon.svg" TEXT)

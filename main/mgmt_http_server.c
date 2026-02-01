@@ -23,9 +23,11 @@
 
 #include "esp_http_server.h"
 #include <string.h>
+#include <stdlib.h>
 #include "esp_log.h"
 
 #include "esp_littlefs.h"
+#include "luamatrix_mqtt.h"
 
 // Binary-embedded templates
 #define DECLARE_TEMPLATE(name) \
@@ -533,6 +535,106 @@ static esp_err_t upload_handler(httpd_req_t *req) {
         return ESP_OK;
 }
 
+// GET /mqtt - returns current MQTT settings as JSON
+static esp_err_t mqtt_get_handler(httpd_req_t *req) {
+        httpd_resp_set_type(req, "application/json");
+
+        char url[256] = {0}, username[64] = {0};
+        char data_topic[MQTT_MAX_TOPIC_LEN] = {0}, program_topic[MQTT_MAX_TOPIC_LEN] = {0};
+        uint16_t port = 1883;
+        mqtt_config_get_broker(url, sizeof(url), &port);
+        mqtt_config_get_auth(username, sizeof(username), NULL, 0);
+        mqtt_config_get_topics(data_topic, sizeof(data_topic), program_topic, sizeof(program_topic));
+        bool enabled = mqtt_config_get_enabled();
+        bool connected = mqtt_client_is_connected();
+
+        httpd_resp_sendstr_chunk(req, "{\"broker\":\"");
+        httpd_resp_sendstr_chunk(req, url);
+        httpd_resp_sendstr_chunk(req, "\",\"port\":");
+
+        char port_str[8];
+        snprintf(port_str, sizeof(port_str), "%d", port);
+        httpd_resp_sendstr_chunk(req, port_str);
+
+        httpd_resp_sendstr_chunk(req, ",\"username\":\"");
+        httpd_resp_sendstr_chunk(req, username);
+        httpd_resp_sendstr_chunk(req, "\",\"enabled\":");
+        httpd_resp_sendstr_chunk(req, enabled ? "true" : "false");
+        httpd_resp_sendstr_chunk(req, ",\"connected\":");
+        httpd_resp_sendstr_chunk(req, connected ? "true" : "false");
+        httpd_resp_sendstr_chunk(req, ",\"data_topic\":\"");
+        httpd_resp_sendstr_chunk(req, data_topic);
+        httpd_resp_sendstr_chunk(req, "\",\"program_topic\":\"");
+        httpd_resp_sendstr_chunk(req, program_topic);
+        httpd_resp_sendstr_chunk(req, "\"}");
+        httpd_resp_sendstr_chunk(req, NULL);
+        return ESP_OK;
+}
+
+// POST /mqtt - save MQTT settings
+static esp_err_t mqtt_post_handler(httpd_req_t *req) {
+        char buf[512];
+        int remaining = req->content_len;
+
+        if (remaining >= (int)sizeof(buf)) {
+                httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Request too large");
+                return ESP_FAIL;
+        }
+
+        int received = 0;
+        while (remaining > 0) {
+                int ret = httpd_req_recv(req, buf + received, remaining);
+                if (ret <= 0) {
+                        if (ret == HTTPD_SOCK_ERR_TIMEOUT) continue;
+                        return ESP_FAIL;
+                }
+                received += ret;
+                remaining -= ret;
+        }
+        buf[received] = '\0';
+
+        // Parse form data
+        char broker[256] = {0}, username[64] = {0}, password[64] = {0};
+        char data_topic[MQTT_MAX_TOPIC_LEN] = {0}, program_topic[MQTT_MAX_TOPIC_LEN] = {0};
+        char port_str[16] = {0}, enabled_str[8] = {0};
+
+        httpd_query_key_value(buf, "broker", broker, sizeof(broker));
+        httpd_query_key_value(buf, "port", port_str, sizeof(port_str));
+        httpd_query_key_value(buf, "username", username, sizeof(username));
+        httpd_query_key_value(buf, "password", password, sizeof(password));
+        httpd_query_key_value(buf, "data_topic", data_topic, sizeof(data_topic));
+        httpd_query_key_value(buf, "program_topic", program_topic, sizeof(program_topic));
+        httpd_query_key_value(buf, "enabled", enabled_str, sizeof(enabled_str));
+
+        url_decode(broker);
+        url_decode(username);
+        url_decode(password);
+        url_decode(data_topic);
+        url_decode(program_topic);
+
+        // Apply settings
+        uint16_t port = atoi(port_str);
+        if (port == 0) port = 1883;
+
+        mqtt_config_set_broker(broker, port);
+        mqtt_config_set_auth(username, password);
+        mqtt_config_set_topics(data_topic, program_topic);
+        mqtt_config_set_enabled(strcmp(enabled_str, "on") == 0 ||
+                                strcmp(enabled_str, "1") == 0 ||
+                                strcmp(enabled_str, "true") == 0);
+        mqtt_config_save();
+
+        // Restart MQTT client with new settings
+        mqtt_client_stop();
+        mqtt_client_start();
+
+        // Redirect back to main page
+        httpd_resp_set_status(req, "302 Found");
+        httpd_resp_set_hdr(req, "Location", "/");
+        httpd_resp_send(req, NULL, 0);
+        return ESP_OK;
+}
+
 #if 0
 static esp_err_t settings_post_handler(httpd_req_t *req) {
         char buf[256];
@@ -650,6 +752,18 @@ void mgmt_http_server_start(void) {
                 .handler = save_handler,
                 .user_ctx = NULL
         };
+        httpd_uri_t mqtt_get_uri = {
+                .uri = "/mqtt",
+                .method = HTTP_GET,
+                .handler = mqtt_get_handler,
+                .user_ctx = NULL
+        };
+        httpd_uri_t mqtt_post_uri = {
+                .uri = "/mqtt",
+                .method = HTTP_POST,
+                .handler = mqtt_post_handler,
+                .user_ctx = NULL
+        };
         #if 0
         httpd_uri_t settings_post_uri = {
                 .uri = "/settings",
@@ -680,6 +794,8 @@ void mgmt_http_server_start(void) {
         httpd_register_uri_handler(server, &edit_uri);
         httpd_register_uri_handler(server, &readfile_uri);
         httpd_register_uri_handler(server, &save_uri);
+        httpd_register_uri_handler(server, &mqtt_get_uri);
+        httpd_register_uri_handler(server, &mqtt_post_uri);
         //httpd_register_uri_handler(server, &settings_post_uri);
         //httpd_register_uri_handler(server, &scan_get_uri);
         //httpd_register_uri_handler(server, &hs_get_uri);
