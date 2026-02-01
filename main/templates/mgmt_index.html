@@ -155,7 +155,10 @@ function loadFiles() {
         tr.innerHTML =
           '<td><a href="/edit?filename=' + f.name + '">' + f.name + '</a></td>' +
           '<td>' + f.size + ' bytes</td>' +
-          '<td><a href="/delete?filename=' + f.name + '" role="button" class="outline secondary">Delete</a></td>';
+          '<td>' +
+            '<a href="/readfile?filename=' + f.name + '" download="' + f.name + '" role="button" class="outline">Download</a> ' +
+            '<a href="/delete?filename=' + f.name + '" role="button" class="outline secondary">Delete</a>' +
+          '</td>';
         tbody.appendChild(tr);
       });
     })

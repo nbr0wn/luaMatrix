@@ -19,132 +19,114 @@ static const char* TAG = "luafuncs";
 #define LOCAL_LUA_NUMBER 2
 #define LOCAL_LUA_STRING 3
 
-//  lua_pushinteger(LUA,int);
-//  lua_pushnumber(LUA,float);
-//  lua_pushstring(LUA,char *);
+// Static error buffer for argument errors
+static char s_arg_error[128];
 
+// Get typename for our arg types
+static const char *get_argtype_name(int argtype) {
+    switch(argtype) {
+        case LOCAL_LUA_INTEGER: return "integer";
+        case LOCAL_LUA_NUMBER: return "number";
+        case LOCAL_LUA_STRING: return "string";
+        default: return "unknown";
+    }
+}
 
-int get_lua_arg(lua_State *LUA, int argno, int argtype, void *out) {
+// Returns 0 on success, 1 on error (with s_arg_error populated)
+static int get_lua_arg(lua_State *LUA, int argno, int argtype, void *out) {
     int nargs = lua_gettop(LUA);
-    if(argno > nargs) {
-        ESP_LOGI(TAG, "Not enough args");
+    if (argno > nargs) {
+        snprintf(s_arg_error, sizeof(s_arg_error),
+                 "arg #%d: expected %s, got nothing (only %d args)",
+                 argno, get_argtype_name(argtype), nargs);
         return 1;
     }
     switch(argtype) {
         case LOCAL_LUA_INTEGER:
-            if(!lua_isinteger(LUA,argno)){
-                ESP_LOGI(TAG, "ARG %d - not an integer: %s", argno, luaL_typename(LUA,argno));
-                lua_pushliteral(LUA, "bad argument");
-                lua_error(LUA);
+            if (!lua_isinteger(LUA, argno)) {
+                snprintf(s_arg_error, sizeof(s_arg_error),
+                         "arg #%d: expected integer, got %s",
+                         argno, luaL_typename(LUA, argno));
                 return 1;
             }
-            int *outInt = (int *)out;
-            *outInt = lua_tointeger(LUA,argno);
-            //ESP_LOGI(TAG, "ARG %d - %d", argno, *outInt);
-        break;
+            *(int *)out = lua_tointeger(LUA, argno);
+            break;
         case LOCAL_LUA_NUMBER:
-            if(!lua_isnumber(LUA,argno)){
-                ESP_LOGI(TAG, "ARG %d - Not a number", argno);
-                lua_pushliteral(LUA, "bad argument");
-                lua_error(LUA);
+            if (!lua_isnumber(LUA, argno)) {
+                snprintf(s_arg_error, sizeof(s_arg_error),
+                         "arg #%d: expected number, got %s",
+                         argno, luaL_typename(LUA, argno));
                 return 1;
             }
-            float *outFloat = (float *)out;
-            *outFloat = lua_tonumber(LUA,argno);
-            //ESP_LOGI(TAG, "ARG %d - %g", argno, *outFloat);
-        break;
+            *(float *)out = lua_tonumber(LUA, argno);
+            break;
         case LOCAL_LUA_STRING:
-            if(!lua_isstring(LUA,argno)){
-                ESP_LOGI(TAG, "ARG %d - not a string", argno);
-                lua_pushliteral(LUA, "bad argument");
-                lua_error(LUA);
+            if (!lua_isstring(LUA, argno)) {
+                snprintf(s_arg_error, sizeof(s_arg_error),
+                         "arg #%d: expected string, got %s",
+                         argno, luaL_typename(LUA, argno));
                 return 1;
             }
-            char *outChar = (char *)out;
-            outChar = lua_tostring(LUA,argno);
-            //ESP_LOGI(TAG, "ARG %d - %s", argno, *outChar);
-        break;
+            *(const char **)out = lua_tostring(LUA, argno);
+            break;
     }
     return 0;
 }
 
+// Macro to get arg with automatic error handling
+// Usage: LUA_ARG(L, 1, LOCAL_LUA_INTEGER, x, "function_name");
+#define LUA_ARG(L, argno, type, var, funcname) \
+    do { \
+        if (get_lua_arg(L, argno, type, &(var))) { \
+            return luaL_error(L, "%s: %s", funcname, s_arg_error); \
+        } \
+    } while(0)
+
 int lua_fill_rect(lua_State *LUA) {
-    int x,y,w,h,r,g,b;
-    int err = 0;
-    int argno = 1;
-    err += get_lua_arg(LUA, argno++, LOCAL_LUA_INTEGER, &x);
-    err += get_lua_arg(LUA, argno++, LOCAL_LUA_INTEGER, &y);
-    err += get_lua_arg(LUA, argno++, LOCAL_LUA_INTEGER, &w);
-    err += get_lua_arg(LUA, argno++, LOCAL_LUA_INTEGER, &h);
-    err += get_lua_arg(LUA, argno++, LOCAL_LUA_INTEGER, &r);
-    err += get_lua_arg(LUA, argno++, LOCAL_LUA_INTEGER, &g);
-    err += get_lua_arg(LUA, argno++, LOCAL_LUA_INTEGER, &b);
-
-    if(err) {
-        ESP_LOGI(TAG, "FILL_RECT argument error");
-    }
-
-    fill_rect(x,y,w,h,r,g,b);
-    
+    int x, y, w, h, r, g, b;
+    LUA_ARG(LUA, 1, LOCAL_LUA_INTEGER, x, "fill_rect");
+    LUA_ARG(LUA, 2, LOCAL_LUA_INTEGER, y, "fill_rect");
+    LUA_ARG(LUA, 3, LOCAL_LUA_INTEGER, w, "fill_rect");
+    LUA_ARG(LUA, 4, LOCAL_LUA_INTEGER, h, "fill_rect");
+    LUA_ARG(LUA, 5, LOCAL_LUA_INTEGER, r, "fill_rect");
+    LUA_ARG(LUA, 6, LOCAL_LUA_INTEGER, g, "fill_rect");
+    LUA_ARG(LUA, 7, LOCAL_LUA_INTEGER, b, "fill_rect");
+    fill_rect(x, y, w, h, r, g, b);
     return 0;
 }
 
 int lua_set_pixel(lua_State *LUA) {
-    int x,y,r,g,b;
-    int err = 0;
-    int argno = 1;
-    err += get_lua_arg(LUA, argno++, LOCAL_LUA_INTEGER, &x);
-    err += get_lua_arg(LUA, argno++, LOCAL_LUA_INTEGER, &y);
-    err += get_lua_arg(LUA, argno++, LOCAL_LUA_INTEGER, &r);
-    err += get_lua_arg(LUA, argno++, LOCAL_LUA_INTEGER, &g);
-    err += get_lua_arg(LUA, argno++, LOCAL_LUA_INTEGER, &b);
-
-    if(err) {
-        ESP_LOGI(TAG, "SET_PIXEL argument error");
-    }
-
-    set_pixel(x,y,r,g,b);
-    
+    int x, y, r, g, b;
+    LUA_ARG(LUA, 1, LOCAL_LUA_INTEGER, x, "set_pixel");
+    LUA_ARG(LUA, 2, LOCAL_LUA_INTEGER, y, "set_pixel");
+    LUA_ARG(LUA, 3, LOCAL_LUA_INTEGER, r, "set_pixel");
+    LUA_ARG(LUA, 4, LOCAL_LUA_INTEGER, g, "set_pixel");
+    LUA_ARG(LUA, 5, LOCAL_LUA_INTEGER, b, "set_pixel");
+    set_pixel(x, y, r, g, b);
     return 0;
 }
 
 int lua_draw_hline(lua_State *LUA) {
-    int x,y,len,r,g,b;
-    int err = 0;
-    int argno = 1;
-    err += get_lua_arg(LUA, argno++, LOCAL_LUA_INTEGER, &x);
-    err += get_lua_arg(LUA, argno++, LOCAL_LUA_INTEGER, &y);
-    err += get_lua_arg(LUA, argno++, LOCAL_LUA_INTEGER, &len);
-    err += get_lua_arg(LUA, argno++, LOCAL_LUA_INTEGER, &r);
-    err += get_lua_arg(LUA, argno++, LOCAL_LUA_INTEGER, &g);
-    err += get_lua_arg(LUA, argno++, LOCAL_LUA_INTEGER, &b);
-
-    if(err) {
-        ESP_LOGI(TAG, "SET_PIXEL argument error");
-    }
-
-    horiz_line(x,y,len,r,g,b);
-    
+    int x, y, len, r, g, b;
+    LUA_ARG(LUA, 1, LOCAL_LUA_INTEGER, x, "draw_hline");
+    LUA_ARG(LUA, 2, LOCAL_LUA_INTEGER, y, "draw_hline");
+    LUA_ARG(LUA, 3, LOCAL_LUA_INTEGER, len, "draw_hline");
+    LUA_ARG(LUA, 4, LOCAL_LUA_INTEGER, r, "draw_hline");
+    LUA_ARG(LUA, 5, LOCAL_LUA_INTEGER, g, "draw_hline");
+    LUA_ARG(LUA, 6, LOCAL_LUA_INTEGER, b, "draw_hline");
+    horiz_line(x, y, len, r, g, b);
     return 0;
 }
 
 int lua_draw_vline(lua_State *LUA) {
-    int x,y,len,r,g,b;
-    int err = 0;
-    int argno = 1;
-    err += get_lua_arg(LUA, argno++, LOCAL_LUA_INTEGER, &x);
-    err += get_lua_arg(LUA, argno++, LOCAL_LUA_INTEGER, &y);
-    err += get_lua_arg(LUA, argno++, LOCAL_LUA_INTEGER, &len);
-    err += get_lua_arg(LUA, argno++, LOCAL_LUA_INTEGER, &r);
-    err += get_lua_arg(LUA, argno++, LOCAL_LUA_INTEGER, &g);
-    err += get_lua_arg(LUA, argno++, LOCAL_LUA_INTEGER, &b);
-
-    if(err) {
-        ESP_LOGI(TAG, "SET_PIXEL argument error");
-    }
-
-    vert_line(x,y,len,r,g,b);
-    
+    int x, y, len, r, g, b;
+    LUA_ARG(LUA, 1, LOCAL_LUA_INTEGER, x, "draw_vline");
+    LUA_ARG(LUA, 2, LOCAL_LUA_INTEGER, y, "draw_vline");
+    LUA_ARG(LUA, 3, LOCAL_LUA_INTEGER, len, "draw_vline");
+    LUA_ARG(LUA, 4, LOCAL_LUA_INTEGER, r, "draw_vline");
+    LUA_ARG(LUA, 5, LOCAL_LUA_INTEGER, g, "draw_vline");
+    LUA_ARG(LUA, 6, LOCAL_LUA_INTEGER, b, "draw_vline");
+    vert_line(x, y, len, r, g, b);
     return 0;
 }
 
@@ -179,20 +161,13 @@ static void draw_line_impl(int x0, int y0, int x1, int y1, int r, int g, int b) 
 
 int lua_draw_line(lua_State *LUA) {
     int x0, y0, x1, y1, r, g, b;
-    int err = 0;
-    int argno = 1;
-    err += get_lua_arg(LUA, argno++, LOCAL_LUA_INTEGER, &x0);
-    err += get_lua_arg(LUA, argno++, LOCAL_LUA_INTEGER, &y0);
-    err += get_lua_arg(LUA, argno++, LOCAL_LUA_INTEGER, &x1);
-    err += get_lua_arg(LUA, argno++, LOCAL_LUA_INTEGER, &y1);
-    err += get_lua_arg(LUA, argno++, LOCAL_LUA_INTEGER, &r);
-    err += get_lua_arg(LUA, argno++, LOCAL_LUA_INTEGER, &g);
-    err += get_lua_arg(LUA, argno++, LOCAL_LUA_INTEGER, &b);
-
-    if (err) {
-        ESP_LOGI(TAG, "DRAW_LINE argument error");
-    }
-
+    LUA_ARG(LUA, 1, LOCAL_LUA_INTEGER, x0, "draw_line");
+    LUA_ARG(LUA, 2, LOCAL_LUA_INTEGER, y0, "draw_line");
+    LUA_ARG(LUA, 3, LOCAL_LUA_INTEGER, x1, "draw_line");
+    LUA_ARG(LUA, 4, LOCAL_LUA_INTEGER, y1, "draw_line");
+    LUA_ARG(LUA, 5, LOCAL_LUA_INTEGER, r, "draw_line");
+    LUA_ARG(LUA, 6, LOCAL_LUA_INTEGER, g, "draw_line");
+    LUA_ARG(LUA, 7, LOCAL_LUA_INTEGER, b, "draw_line");
     draw_line_impl(x0, y0, x1, y1, r, g, b);
     return 0;
 }
@@ -200,18 +175,12 @@ int lua_draw_line(lua_State *LUA) {
 // Midpoint circle algorithm
 int lua_draw_circle(lua_State *LUA) {
     int cx, cy, radius, r, g, b;
-    int err = 0;
-    int argno = 1;
-    err += get_lua_arg(LUA, argno++, LOCAL_LUA_INTEGER, &cx);
-    err += get_lua_arg(LUA, argno++, LOCAL_LUA_INTEGER, &cy);
-    err += get_lua_arg(LUA, argno++, LOCAL_LUA_INTEGER, &radius);
-    err += get_lua_arg(LUA, argno++, LOCAL_LUA_INTEGER, &r);
-    err += get_lua_arg(LUA, argno++, LOCAL_LUA_INTEGER, &g);
-    err += get_lua_arg(LUA, argno++, LOCAL_LUA_INTEGER, &b);
-
-    if (err) {
-        ESP_LOGI(TAG, "DRAW_CIRCLE argument error");
-    }
+    LUA_ARG(LUA, 1, LOCAL_LUA_INTEGER, cx, "draw_circle");
+    LUA_ARG(LUA, 2, LOCAL_LUA_INTEGER, cy, "draw_circle");
+    LUA_ARG(LUA, 3, LOCAL_LUA_INTEGER, radius, "draw_circle");
+    LUA_ARG(LUA, 4, LOCAL_LUA_INTEGER, r, "draw_circle");
+    LUA_ARG(LUA, 5, LOCAL_LUA_INTEGER, g, "draw_circle");
+    LUA_ARG(LUA, 6, LOCAL_LUA_INTEGER, b, "draw_circle");
 
     int x = radius;
     int y = 0;
@@ -241,18 +210,12 @@ int lua_draw_circle(lua_State *LUA) {
 // Filled circle using horizontal lines
 int lua_draw_filled_circle(lua_State *LUA) {
     int cx, cy, radius, r, g, b;
-    int err = 0;
-    int argno = 1;
-    err += get_lua_arg(LUA, argno++, LOCAL_LUA_INTEGER, &cx);
-    err += get_lua_arg(LUA, argno++, LOCAL_LUA_INTEGER, &cy);
-    err += get_lua_arg(LUA, argno++, LOCAL_LUA_INTEGER, &radius);
-    err += get_lua_arg(LUA, argno++, LOCAL_LUA_INTEGER, &r);
-    err += get_lua_arg(LUA, argno++, LOCAL_LUA_INTEGER, &g);
-    err += get_lua_arg(LUA, argno++, LOCAL_LUA_INTEGER, &b);
-
-    if (err) {
-        ESP_LOGI(TAG, "DRAW_FILLED_CIRCLE argument error");
-    }
+    LUA_ARG(LUA, 1, LOCAL_LUA_INTEGER, cx, "draw_filled_circle");
+    LUA_ARG(LUA, 2, LOCAL_LUA_INTEGER, cy, "draw_filled_circle");
+    LUA_ARG(LUA, 3, LOCAL_LUA_INTEGER, radius, "draw_filled_circle");
+    LUA_ARG(LUA, 4, LOCAL_LUA_INTEGER, r, "draw_filled_circle");
+    LUA_ARG(LUA, 5, LOCAL_LUA_INTEGER, g, "draw_filled_circle");
+    LUA_ARG(LUA, 6, LOCAL_LUA_INTEGER, b, "draw_filled_circle");
 
     int x = radius;
     int y = 0;
@@ -278,22 +241,15 @@ int lua_draw_filled_circle(lua_State *LUA) {
 // Triangle outline using three lines
 int lua_draw_triangle(lua_State *LUA) {
     int x0, y0, x1, y1, x2, y2, r, g, b;
-    int err = 0;
-    int argno = 1;
-    err += get_lua_arg(LUA, argno++, LOCAL_LUA_INTEGER, &x0);
-    err += get_lua_arg(LUA, argno++, LOCAL_LUA_INTEGER, &y0);
-    err += get_lua_arg(LUA, argno++, LOCAL_LUA_INTEGER, &x1);
-    err += get_lua_arg(LUA, argno++, LOCAL_LUA_INTEGER, &y1);
-    err += get_lua_arg(LUA, argno++, LOCAL_LUA_INTEGER, &x2);
-    err += get_lua_arg(LUA, argno++, LOCAL_LUA_INTEGER, &y2);
-    err += get_lua_arg(LUA, argno++, LOCAL_LUA_INTEGER, &r);
-    err += get_lua_arg(LUA, argno++, LOCAL_LUA_INTEGER, &g);
-    err += get_lua_arg(LUA, argno++, LOCAL_LUA_INTEGER, &b);
-
-    if (err) {
-        ESP_LOGI(TAG, "DRAW_TRIANGLE argument error");
-    }
-
+    LUA_ARG(LUA, 1, LOCAL_LUA_INTEGER, x0, "draw_triangle");
+    LUA_ARG(LUA, 2, LOCAL_LUA_INTEGER, y0, "draw_triangle");
+    LUA_ARG(LUA, 3, LOCAL_LUA_INTEGER, x1, "draw_triangle");
+    LUA_ARG(LUA, 4, LOCAL_LUA_INTEGER, y1, "draw_triangle");
+    LUA_ARG(LUA, 5, LOCAL_LUA_INTEGER, x2, "draw_triangle");
+    LUA_ARG(LUA, 6, LOCAL_LUA_INTEGER, y2, "draw_triangle");
+    LUA_ARG(LUA, 7, LOCAL_LUA_INTEGER, r, "draw_triangle");
+    LUA_ARG(LUA, 8, LOCAL_LUA_INTEGER, g, "draw_triangle");
+    LUA_ARG(LUA, 9, LOCAL_LUA_INTEGER, b, "draw_triangle");
     draw_line_impl(x0, y0, x1, y1, r, g, b);
     draw_line_impl(x1, y1, x2, y2, r, g, b);
     draw_line_impl(x2, y2, x0, y0, r, g, b);
@@ -307,21 +263,15 @@ static void swap_int(int *a, int *b) {
 
 int lua_draw_filled_triangle(lua_State *LUA) {
     int x0, y0, x1, y1, x2, y2, r, g, b;
-    int err = 0;
-    int argno = 1;
-    err += get_lua_arg(LUA, argno++, LOCAL_LUA_INTEGER, &x0);
-    err += get_lua_arg(LUA, argno++, LOCAL_LUA_INTEGER, &y0);
-    err += get_lua_arg(LUA, argno++, LOCAL_LUA_INTEGER, &x1);
-    err += get_lua_arg(LUA, argno++, LOCAL_LUA_INTEGER, &y1);
-    err += get_lua_arg(LUA, argno++, LOCAL_LUA_INTEGER, &x2);
-    err += get_lua_arg(LUA, argno++, LOCAL_LUA_INTEGER, &y2);
-    err += get_lua_arg(LUA, argno++, LOCAL_LUA_INTEGER, &r);
-    err += get_lua_arg(LUA, argno++, LOCAL_LUA_INTEGER, &g);
-    err += get_lua_arg(LUA, argno++, LOCAL_LUA_INTEGER, &b);
-
-    if (err) {
-        ESP_LOGI(TAG, "DRAW_FILLED_TRIANGLE argument error");
-    }
+    LUA_ARG(LUA, 1, LOCAL_LUA_INTEGER, x0, "draw_filled_triangle");
+    LUA_ARG(LUA, 2, LOCAL_LUA_INTEGER, y0, "draw_filled_triangle");
+    LUA_ARG(LUA, 3, LOCAL_LUA_INTEGER, x1, "draw_filled_triangle");
+    LUA_ARG(LUA, 4, LOCAL_LUA_INTEGER, y1, "draw_filled_triangle");
+    LUA_ARG(LUA, 5, LOCAL_LUA_INTEGER, x2, "draw_filled_triangle");
+    LUA_ARG(LUA, 6, LOCAL_LUA_INTEGER, y2, "draw_filled_triangle");
+    LUA_ARG(LUA, 7, LOCAL_LUA_INTEGER, r, "draw_filled_triangle");
+    LUA_ARG(LUA, 8, LOCAL_LUA_INTEGER, g, "draw_filled_triangle");
+    LUA_ARG(LUA, 9, LOCAL_LUA_INTEGER, b, "draw_filled_triangle");
 
     // Sort vertices by y-coordinate (y0 <= y1 <= y2)
     if (y0 > y1) { swap_int(&y0, &y1); swap_int(&x0, &x1); }
@@ -806,35 +756,26 @@ static void draw_char_sized(int x, int y, char c, int r, int g, int b, int size)
 
 int lua_draw_string(lua_State *LUA) {
     int x, y, r, g, b, size = 8;
-    int err = 0;
-    int argno = 1;
     int nargs = lua_gettop(LUA);
+    const char *str;
 
-    if (!lua_isstring(LUA, argno)) {
-        ESP_LOGI(TAG, "DRAW_STRING: first arg must be string");
-        lua_pushliteral(LUA, "bad argument");
-        lua_error(LUA);
-        return 0;
-    }
-    const char *str = lua_tostring(LUA, argno++);
+    // Arg 1: string
+    LUA_ARG(LUA, 1, LOCAL_LUA_STRING, str, "draw_string");
 
-    err += get_lua_arg(LUA, argno++, LOCAL_LUA_INTEGER, &x);
-    err += get_lua_arg(LUA, argno++, LOCAL_LUA_INTEGER, &y);
-    err += get_lua_arg(LUA, argno++, LOCAL_LUA_INTEGER, &r);
-    err += get_lua_arg(LUA, argno++, LOCAL_LUA_INTEGER, &g);
-    err += get_lua_arg(LUA, argno++, LOCAL_LUA_INTEGER, &b);
+    // Args 2-6: x, y, r, g, b
+    LUA_ARG(LUA, 2, LOCAL_LUA_INTEGER, x, "draw_string");
+    LUA_ARG(LUA, 3, LOCAL_LUA_INTEGER, y, "draw_string");
+    LUA_ARG(LUA, 4, LOCAL_LUA_INTEGER, r, "draw_string");
+    LUA_ARG(LUA, 5, LOCAL_LUA_INTEGER, g, "draw_string");
+    LUA_ARG(LUA, 6, LOCAL_LUA_INTEGER, b, "draw_string");
 
     // Optional font size parameter (default 8)
-    if (nargs >= 7 && lua_isinteger(LUA, argno)) {
-        size = lua_tointeger(LUA, argno);
+    if (nargs >= 7 && lua_isinteger(LUA, 7)) {
+        size = lua_tointeger(LUA, 7);
         // Validate size - only allow 3, 5, 8, or 16
         if (size != 3 && size != 5 && size != 8 && size != 16) {
             size = 8;
         }
-    }
-
-    if (err) {
-        ESP_LOGI(TAG, "DRAW_STRING argument error");
     }
 
     int cursor_x = x;
@@ -848,6 +789,22 @@ int lua_draw_string(lua_State *LUA) {
     return 0;
 }
 
+// C-callable text drawing function for boot screen etc.
+void draw_text(const char *str, int x, int y, int r, int g, int b, int size) {
+    // Validate size
+    if (size != 3 && size != 5 && size != 8 && size != 16) {
+        size = 8;
+    }
+
+    int cursor_x = x;
+    int char_width = (size == 3) ? 4 : (size == 5) ? 6 : (size == 16) ? 17 : 9;
+    while (*str) {
+        draw_char_sized(cursor_x, y, *str, r, g, b, size);
+        cursor_x += char_width;
+        str++;
+    }
+}
+
 int lua_millis(lua_State *LUA) {
     uint64_t usec = (int)esp_timer_get_time();
     uint32_t millis = usec / 1000;
@@ -857,14 +814,7 @@ int lua_millis(lua_State *LUA) {
 
 int lua_delay(lua_State *LUA) {
     int ms;
-    int err = 0;
-    err += get_lua_arg(LUA, 1, LOCAL_LUA_INTEGER, &ms);
-
-    if (err) {
-        ESP_LOGI(TAG, "DELAY argument error");
-        return 0;
-    }
-
+    LUA_ARG(LUA, 1, LOCAL_LUA_INTEGER, ms, "delay");
     if (ms > 0) {
         vTaskDelay(pdMS_TO_TICKS(ms));
     }
