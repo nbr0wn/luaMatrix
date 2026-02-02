@@ -1,54 +1,92 @@
 xMax = 192
 yMax = 64
-r = 3
+r = 2
 balls = {}
-num_balls = 0
+particles = {}
+max_balls = 5
+max_particles = 10
+velocity_adj = 5.0
+
 
 function add_ball()
     local ball = {}
-    ball['x'] = math.random(xMax)
-    ball['y'] = math.random(yMax)
-    ball['dx'] = math.random() - 0.5 
-    ball['dy'] = math.random() - 0.5
-    ball['r']=math.random(255)
-    ball['g']=math.random(255)
-    ball['b']=math.random(255)
+    ball['x'] = 0
+    ball['y'] = 0
+    ball['dx'] = 0
+    ball['dy'] = 0
+    ball['r']=0
+    ball['g']=0
+    ball['b']=0
     ball['dying']=false
+    ball['dead']=true
     table.insert(balls,ball)
 end
 
+function add_particle()
+    local particle = {}
+    particle['x'] = 0
+    particle['y'] = 0
+    particle['dx'] = 0
+    particle['dy'] = 0
+    particle['r']=0
+    particle['g']=0
+    particle['b']=0
+    particle['dead']=true
+    particle['death_time']=0
+    table.insert(particles,particle)
+end
+
+-- Pre-allocate objects
+for i=1,max_particles do
+    add_particle(x,y)
+end
+
+for i=1,max_balls do
+    add_ball(x,y)
+end
+
+function deploy_ball()
+    for k,v in pairs(balls) do
+        if v['dead'] == true then
+            v['x'] = math.random(xMax)
+            v['y'] = math.random(yMax)
+            v['dx'] = (math.random() - 0.5) / velocity_adj
+            v['dy'] = (math.random() - 0.5) / velocity_adj
+            v['r']=math.random(255)
+            v['g']=math.random(255)
+            v['b']=math.random(255)
+            v['dying']=false
+            v['dead']=false
+            return
+        end
+    end
+end
+
+function deploy_particle(x,y)
+    for k,v in pairs(particles) do
+        if v['dead'] == true then
+            v['x'] = x
+            v['y'] = y
+            v['dx'] = (math.random() - 0.5 ) / (velocity_adj / 2.0)
+            v['dy'] = (math.random() - 0.5) / velocity_adj
+            v['r']=255
+            v['g']=255
+            v['b']=0
+            v['dead']=false
+            v['death_time']=millis() + 2200
+            return
+        end
+    end
+end
+
+
+-- Utility Functions
 function tableLength(T)
    local count = 0
    for _ in pairs(T) do count = count + 1 end
    return count
 end
 
-
-function update_balls()
-    for k,v in pairs(balls) do
-        draw_filled_circle(math.floor(v['x']), math.floor(v['y']), r, 0,0,0)
-        v['x'] = v['x'] + v['dx']
-        v['y'] = v['y'] + v['dy']
-        
-        if v['y'] >= yMax-r and v['dy'] > 0 then
-            v['y'] = yMax-r
-            v['dy'] = -v['dy']
-        end
-        if v['y'] <= r and v['dy'] < 0 then
-            v['y'] = r
-            v['dy'] = -v['dy']
-        end
-        if v['x'] >= xMax-r and v['dx'] > 0 then
-            v['x'] = xMax-r
-            v['dx'] = -v['dx']
-        end
-        if v['x'] <= r and v['dx'] < 0 then
-            v['x'] = r
-            v['dx'] = -v['dx']
-        end
-        draw_filled_circle(math.floor(v['x']), math.floor(v['y']), r, v['r'], v['g'], v['b'])
-    end
-end
 
 --- Returns a new collection of the items in coll for which pred(item) returns true.
 ---@param coll table
@@ -64,15 +102,85 @@ function Filter(coll, pred)
     return result
 end
 
-
-function dead_ball(b) 
-    if (b['dead'] == true) then
-        return false
+function update_balls(delta)
+    local ball_count = 0
+    for k,v in pairs(balls) do
+        if v['dead'] == false then
+            ball_count = ball_count + 1
+            draw_filled_circle(math.floor(v['x']), math.floor(v['y']), r, 0,0,0)
+            v['x'] = v['x'] + v['dx'] * delta
+            v['y'] = v['y'] + v['dy'] * delta
+            
+            if v['y'] >= yMax-r and v['dy'] > 0 then
+                v['y'] = yMax-r
+                v['dy'] = -v['dy']
+            end
+            if v['y'] <= r and v['dy'] < 0 then
+                v['y'] = r
+                v['dy'] = -v['dy']
+            end
+            if v['x'] >= xMax-r and v['dx'] > 0 then
+                v['x'] = xMax-r
+                v['dx'] = -v['dx']
+            end
+            if v['x'] <= r and v['dx'] < 0 then
+                v['x'] = r
+                v['dx'] = -v['dx']
+            end
+            draw_filled_circle(math.floor(v['x']), math.floor(v['y']), r, v['r'], v['g'], v['b'])
+        end
     end
-    return true
+    if ball_count < max_balls then
+        deploy_ball()
+    end
 end
 
+function update_particles(delta)
+    for k,v in pairs(particles) do
+        if v['dead'] == false then
+            set_pixel(math.floor(v['x']), math.floor(v['y']), 0,0,0)
+            v['x'] = v['x'] + v['dx'] * delta
+            v['y'] = v['y'] + v['dy'] * delta
+            
+            if v['y'] >= yMax-r and v['dy'] > 0 then
+                v['y'] = yMax-r
+                v['dy'] = -v['dy']
+            end
+            if v['y'] <= r and v['dy'] < 0 then
+                v['y'] = r
+                v['dy'] = -v['dy']
+            end
+            if v['x'] >= xMax-r and v['dx'] > 0 then
+                v['x'] = xMax-r
+                v['dx'] = -v['dx']
+            end
+            if v['x'] <= r and v['dx'] < 0 then
+                v['x'] = r
+                v['dx'] = -v['dx']
+            end
+            
+            -- Add some gravity
+            v['dy'] = v['dy'] + 0.02
+            
+            
+            if millis() > v['death_time'] then
+                v['dead'] = true
+            else
+                set_pixel(math.floor(v['x']), math.floor(v['y']), v['r'], v['g'], v['b'])
+            end
+        end
+    end
+end
+
+function boom(x,y)
+    for i=1,10 do
+        deploy_particle(x,y)
+    end
+end
+    
+
 ship_color = 0
+
 
 function ship()
     ship_color = (ship_color + 3) % 255
@@ -80,58 +188,65 @@ function ship()
     y=64-4
     draw_filled_circle(x,y, 3, ship_color, ship_color, ship_color)
     
-    
     for k,v in pairs(balls) do
         dx = v['x'] - x
         dy = v['y'] - y
         
-        -- Find balls to kill
-        if math.sqrt(dx*dx+dy*dy) < 20 then
-            -- Ignore already dying balls
-            if v['dying'] == false then
-                draw_filled_circle(math.floor(v['x']), math.floor(v['y']), r, 0,0,0)
-                v['dying']=true
-                v['death_time']=millis() + 500
-                v['arc_x'] = math.floor(v['x'])
-                v['arc_y'] = math.floor(v['y'])
-                v['r']=10
-                v['g']=10
-                v['b']=10
+        if v['dead'] == false then 
+            -- Find balls to kill
+            if math.sqrt(dx*dx+dy*dy) < 20 then
+                -- Ignore already dying balls
+                if v['dying'] == false then
+                    draw_filled_circle(math.floor(v['x']), math.floor(v['y']), r, 0,0,0)
+                    v['dying']=true
+                    v['death_time']=millis() + 500
+                    v['arc_x'] = math.floor(v['x'])
+                    v['arc_y'] = math.floor(v['y'])
+                    v['r']=10
+                    v['g']=10
+                    v['b']=10
+                end
             end
-        end
-        
-        -- Update Death animation
-        if v['dying'] == true then
-            draw_line(x, y, v['arc_x'], v['arc_y'], 0,0,0)
-            if millis() > v['death_time'] then
-                draw_filled_circle(math.floor(v['x']), math.floor(v['y']), r, 0,0,0)
-                v['dead'] = true
-            else
-                v['arc_x'] = math.floor(v['x'])
-                v['arc_y'] = math.floor(v['y'])
-                draw_line(x, y, v['arc_x'], v['arc_y'], 255,255,0)
+            
+            -- Update Death animation
+            if v['dying'] == true then
+                draw_line(x, y, v['arc_x'], v['arc_y'], 0,0,0)
+                if millis() > v['death_time'] then
+                    draw_filled_circle(math.floor(v['x']), math.floor(v['y']), r, 0,0,0)
+                    v['dead'] = true
+                    boom(math.floor(v['x']), math.floor(v['y']))
+                else
+                    v['arc_x'] = math.floor(v['x'])
+                    v['arc_y'] = math.floor(v['y'])
+                    draw_line(x, y, v['arc_x'], v['arc_y'], 255,255,0)
+                end
             end
         end
     end
-    balls = Filter(balls,dead_ball)
 end
 
 str="LuaMatrix"
 
 frametimestamp = millis()
 frametime=0
+fps=0
 
 function update_frame_time()
     frametime = millis() - frametimestamp
     frametimestamp=millis()
-    return frametime
+    fps = 1000/frametime
 end
 
 tick = millis()
 lastframetime=0
+
+timestamp=0
 while(1) do
     
-    update_balls()
+    delta=millis()-timestamp
+    update_balls(delta)
+    update_particles(delta)
+    timestamp=millis()
     
     draw_string(str,20,20,200,0,0,16)
     ship()
@@ -141,10 +256,7 @@ while(1) do
         tick = millis()
         draw_string(tostring(lastframetime), 2, 2, 0, 0, 0, 5)
         lastframetime=frametime
+        draw_string(tostring(lastframetime), 2, 2, 0, 255, 0, 5)
         
-        if tableLength(balls) < 20 then
-            add_ball()
-        end
     end
-    draw_string(tostring(lastframetime), 2, 2, 0, 255, 0, 5)
 end

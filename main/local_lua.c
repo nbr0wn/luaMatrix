@@ -17,6 +17,14 @@ static const char* TAG = "lua";
 
 extern bool force_exit;
 
+// Pause request from HTTP server - when set, Lua yields to let HTTP run
+static volatile int s_pause_duration_ms = 0;
+
+// Request Lua to pause execution for HTTP
+void lua_request_pause(int duration_ms) {
+    s_pause_duration_ms = duration_ms;
+}
+
 // Error display colors
 #define ERR_TITLE_R 255
 #define ERR_TITLE_G 0
@@ -147,9 +155,32 @@ int lua_panic_func(lua_State *L) {
     return 0;
 }
 
+// Minimum free heap before Lua starts yielding to let other tasks run
+#define LUA_LOW_MEMORY_THRESHOLD 16384
+
 // lua vm debug callback to avoid watchdog bites
 static void debug_hook(lua_State *LUA, lua_Debug *dbg){
 	(void)dbg;
+
+    // Check if HTTP explicitly requested a pause
+    if (s_pause_duration_ms > 0) {
+        lua_gc(LUA,LUA_GCCOLLECT);
+        s_pause_duration_ms = 0;  // Clear the request
+        lua_pushstring(LUA, "Pausing for web...");
+        lua_error(LUA);
+
+        int pause_ms = s_pause_duration_ms;
+        s_pause_duration_ms = 0;  // Clear the request
+        ESP_LOGI(TAG, "Lua pausing for %dms (HTTP request)", pause_ms);
+        vTaskDelay(pdMS_TO_TICKS(pause_ms));
+    }
+
+    // Auto-yield when memory is low to give HTTP server a chance
+    size_t free_heap = heap_caps_get_largest_free_block(MALLOC_CAP_DEFAULT);
+    if (free_heap < LUA_LOW_MEMORY_THRESHOLD) {
+        // Yield briefly to let other tasks (HTTP) have a go
+        vTaskDelay(pdMS_TO_TICKS(10));
+    }
 
     // Log memory usage every 5 seconds
     static int64_t last_log_time = 0;
@@ -192,6 +223,9 @@ lua_State * lua_init(void){
         ESP_LOGE(TAG, "Failed to set package.path: %s", lua_tostring(LUA, -1));
         lua_pop(LUA, 1); // Remove error message from the stack
     }
+    
+    lua_gc(LUA,LUA_GCGEN);
+
 
     return LUA;
 
@@ -246,45 +280,4 @@ void run_lua_file(const char* file_name)
     log_memory_usage("After lua_close");
 
     ESP_LOGI(TAG, "End of %s", file_name);
-}
-
-// Function to run an embedded Lua script
-void run_lua_string(const char* lua_script, const char* test_name)
-{
-    ESP_LOGI(TAG, "Starting Lua test: %s", test_name);
-
-    log_memory_usage("Start of test");
-
-    lua_State* L = luaL_newstate();
-    if (L == NULL) {
-        ESP_LOGE(TAG, "Failed to create new Lua state");
-        show_lua_error("Failed to create Lua state (out of memory?)");
-        vTaskDelay(pdMS_TO_TICKS(3000));
-        return;
-    }
-    log_memory_usage("After luaL_newstate");
-
-    luaL_openlibs(L);
-    log_memory_usage("After luaL_openlibs");
-
-    if (luaL_dostring(L, lua_script) == LUA_OK) {
-        lua_pop(L, lua_gettop(L));
-    } else {
-        const char *err_msg = lua_tostring(L, -1);
-        ESP_LOGE(TAG, "Error running embedded Lua script: %s", err_msg);
-
-        // Show error on the LED panel
-        show_lua_error(err_msg);
-
-        lua_pop(L, 1); // Remove error message from the stack
-
-        // Keep error displayed for a while
-        vTaskDelay(pdMS_TO_TICKS(3000));
-    }
-    log_memory_usage("After executing Lua script");
-
-    lua_close(L);
-    log_memory_usage("After lua_close");
-
-    ESP_LOGI(TAG, "End of Lua test: %s", test_name);
 }

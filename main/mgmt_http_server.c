@@ -21,15 +21,20 @@
    for more information visit https://www.studiopieters.nl
  **/
 
+#include <dirent.h>
 #include "esp_http_server.h"
-#include <string.h>
-#include <stdlib.h>
-#include "esp_log.h"
-
 #include "esp_littlefs.h"
+#include "esp_log.h"
+#include "esp_vfs.h"
+#include "local_lua.h"
 #include "luamatrix_mqtt.h"
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <sys/stat.h>
+#include <unistd.h>
 
-// Binary-embedded templates
+// Binary-embedded templates - for de-cluttering the code
 #define DECLARE_TEMPLATE(name) \
         extern const char _binary_##name##_start[] asm("_binary_" #name "_start"); \
         extern const char _binary_##name##_end[] asm("_binary_" #name "_end")
@@ -43,35 +48,7 @@ DECLARE_TEMPLATE(logout_html);
 DECLARE_TEMPLATE(edit_html);
 DECLARE_TEMPLATE(firmware_html);
 DECLARE_TEMPLATE(reboot_html);
-#include "esp_vfs.h"
-#include <dirent.h>
-#include <sys/stat.h>
-#include <stdio.h>
-#include <unistd.h>
-
 #define UPLOAD_BUF_SIZE 1024
-//#include "sdkconfig.h"
-//#include "errno.h"
-//#include "esp_err.h"
-//#include "esp_heap_caps.h"
-//#include "esp_idf_version.h"
-//#include "esp_partition.h"
-//#include "esp_rom_sys.h"
-//#include "esp_spiffs.h"
-//#include "esp_system.h"
-//#include "esp_timer.h"
-//#include "freertos/FreeRTOS.h"
-//#include "freertos/queue.h"
-//#include "freertos/semphr.h"
-//#include "freertos/task.h"
-//#include <fcntl.h>
-//#include <stdio.h>
-//#include <stdlib.h>
-//#include <string.h>
-//#include <sys/param.h>
-//#include <sys/time.h>
-//#include <sys/unistd.h>
-//#include <time.h>
 
 static const char* TAG = "http";
 
@@ -635,58 +612,20 @@ static esp_err_t mqtt_post_handler(httpd_req_t *req) {
         return ESP_OK;
 }
 
-#if 0
-static esp_err_t settings_post_handler(httpd_req_t *req) {
-        char buf[256];
-        int ret, remaining = req->content_len;
-        char ssid[64] = {0}, password[64] = {0};
-        while (remaining > 0) {
-                if ((ret = httpd_req_recv(req, buf, MIN(remaining, sizeof(buf)))) <= 0) {
-                        if (ret == HTTPD_SOCK_ERR_TIMEOUT) continue;
-                        return ESP_FAIL;
-                }
-                remaining -= ret;
-                char *ssid_p = strstr(buf, "ssid=");
-                if (ssid_p) sscanf(ssid_p + 5, "%63[^&]", ssid);
-                char *pass_p = strstr(buf, "password=");
-                if (pass_p) sscanf(pass_p + 9, "%63[^&]", password);
-        }
-        url_decode(ssid);
-        url_decode(password);
-        ESP_LOGI(TAG, "Saved AP credentials for %s",ssid);
-        wifi_config_set(ssid, password);
-        httpd_resp_sendstr(req, "WiFi credentials saved. Please reboot device or reconnect.");
-        
-        return ESP_OK;
+void run_on_event(void* handler_arg, esp_event_base_t base, int32_t id, void* event_data)
+{
+    // Event handler logic
+    lua_request_pause(5000);
 }
 
-// ----- /scan endpoint (returns JSON) -----
-static esp_err_t scan_get_handler(httpd_req_t *req) {
-        scanned_ap_info_t *list;
-        size_t count;
-        wifi_config_get_scan_results(&list, &count);
-
-        httpd_resp_set_type(req, "application/json");
-        httpd_resp_sendstr_chunk(req, "[");
-
-        for (size_t i = 0; i < count; ++i) {
-                char entry[128];
-                snprintf(entry, sizeof(entry),
-                         "{\"ssid\":\"%s\",\"rssi\":%d,\"authmode\":\"%s\"}%s",
-                         list[i].ssid, list[i].rssi,
-                         wifi_config_authmode_str(list[i].authmode),
-                         (i < count - 1) ? "," : ""
-                         );
-                httpd_resp_sendstr_chunk(req, entry);
-        }
-        httpd_resp_sendstr_chunk(req, "]");
-        httpd_resp_sendstr_chunk(req, NULL);
-        return ESP_OK;
-}
-#endif
 
 void mgmt_http_server_start(void) {
         if (server) return;
+
+        // Register event hook
+        ESP_ERROR_CHECK(esp_event_handler_instance_register(
+                ESP_HTTP_SERVER_EVENT, HTTP_SERVER_EVENT_ON_CONNECTED, run_on_event, NULL, NULL));
+
         httpd_config_t config = HTTPD_DEFAULT_CONFIG();
         config.server_port = 80;
         config.max_uri_handlers = 16;
